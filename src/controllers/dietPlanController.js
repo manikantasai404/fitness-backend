@@ -14,14 +14,14 @@ function shuffleArray(array) {
  * generateMultiDayDietPlan: Generates a diet plan for multiple days.
  * Expected input (JSON):
  * {
- *   "weight": 70,
+ *   "weight": 75,
  *   "gender": "male",
- *   "fitness_goal": "weight gain",
+ *   "fitness_goal": "weight loss",
  *   "days": [
- *      { "day": 1, "dietType": "veg" },
- *      { "day": 2, "dietType": "nonveg" },
- *      { "day": 3, "dietType": "veg" },
- *      ... (up to day 10 or more)
+ *      { "day": 1, "dietType": "nonveg", "date": "2023-04-20" },
+ *      { "day": 2, "dietType": "nonveg", "date": "2023-04-21" },
+ *      { "day": 3, "dietType": "nonveg", "date": "2023-04-22" },
+ *      { "day": 4, "dietType": "nonveg", "date": "2023-04-23" }
  *   ]
  * }
  */
@@ -46,33 +46,43 @@ exports.generateMultiDayDietPlan = async (req, res) => {
         const waterReq = (weight * 35) / 1000; // in liters (35 ml per kg)
         let fiberReq, carbsReq;
 
-        // Example dynamic calculation based on fitness goal and weight
+        // Dynamic calculation based on fitness goal and weight
         if (fitness_goal.toLowerCase().includes('gain')) {
-            // For weight gain, maybe require relatively lower fiber but higher carbs.
-            fiberReq = weight * 0.5;   // e.g., 0.5 grams fiber per kg
-            carbsReq = weight * 4;     // e.g., 4 grams carbs per kg
+            fiberReq = weight * 0.5;   // 0.5 g fiber per kg
+            carbsReq = weight * 4;     // 4 g carbs per kg
         } else if (fitness_goal.toLowerCase().includes('loss')) {
-            // For weight loss, perhaps higher fiber and lower carbs.
-            fiberReq = weight * 0.7;   // e.g., 0.7 grams fiber per kg
-            carbsReq = weight * 2.5;   // e.g., 2.5 grams carbs per kg
+            fiberReq = weight * 0.7;   // 0.7 g fiber per kg
+            carbsReq = weight * 2.5;   // 2.5 g carbs per kg
         } else {
-            // For maintenance or other goals, a moderate value.
-            fiberReq = weight * 0.6;   // e.g., 0.6 grams fiber per kg
-            carbsReq = weight * 3.5;   // e.g., 3.5 grams carbs per kg
+            fiberReq = weight * 0.6;   // 0.6 g fiber per kg
+            carbsReq = weight * 3.5;   // 3.5 g carbs per kg
         }
 
         let dietPlans = [];
 
         // Loop over each day input
         for (let dayInfo of days) {
-            const { day, dietType } = dayInfo;
+            const { day, dietType, date } = dayInfo;  // NEW: Accept "date" in each day object
+
+            // **NEW CODE: Determine season from provided date**
+            const dayDate = new Date(date);
+            const month = dayDate.getMonth() + 1; // getMonth returns 0-11; convert to 1-12
+            let season;
+            if (month === 12 || month === 1 || month === 2) {
+                season = "Winter";
+            } else if (month >= 3 && month <= 8) {
+                season = "Summer";
+            } else { // month 9 to 11
+                season = "Fall";
+            }
+            // End NEW CODE
 
             // Query foods based on provided dietType and matching fitness_goal in applicable_goals
             const query = `
-        SELECT * FROM fitness.foods 
-        WHERE category = $1 
-          AND applicable_goals ILIKE '%' || $2 || '%'
-      `;
+                SELECT * FROM fitness.foods 
+                WHERE category = $1 
+                  AND applicable_goals ILIKE '%' || $2 || '%'
+            `;
             const values = [dietType, fitness_goal];
             const foodsResult = await pool.query(query, values);
             let foods = foodsResult.rows;
@@ -85,10 +95,10 @@ exports.generateMultiDayDietPlan = async (req, res) => {
             // Optional: For every 3rd day, override with nonveg items if available
             if (day % 3 === 0) {
                 const nonVegQuery = `
-          SELECT * FROM fitness.foods 
-          WHERE category = 'nonveg'
-            AND applicable_goals ILIKE '%' || $1 || '%'
-        `;
+                    SELECT * FROM fitness.foods 
+                    WHERE category = 'nonveg'
+                      AND applicable_goals ILIKE '%' || $1 || '%'
+                `;
                 const nonVegResult = await pool.query(nonVegQuery, [fitness_goal]);
                 if (nonVegResult.rows.length > 0) {
                     foods = nonVegResult.rows;
@@ -103,13 +113,25 @@ exports.generateMultiDayDietPlan = async (req, res) => {
             const snack1 = shuffledFoods[3];
             const snack2 = shuffledFoods[4];
 
+            // **NEW CODE: Fetch a random fruit that is in season (or Year-Round)**
+            const fruitQuery = `
+                SELECT * FROM fitness.fruits 
+                WHERE (season ILIKE $1 OR season ILIKE 'Year-Round')
+                ORDER BY RANDOM() LIMIT 1
+            `;
+            const fruitValues = [season];
+            const fruitResult = await pool.query(fruitQuery, fruitValues);
+            const fruit = fruitResult.rows[0];
+            // End NEW CODE
+
             // Calculate total nutritional values from selected items (example for protein and fiber)
             const totalProtein = [breakfast, lunch, dinner, snack1, snack2].reduce((sum, food) => sum + (food.protein || 0), 0);
             const totalFiber = [breakfast, lunch, dinner, snack1, snack2].reduce((sum, food) => sum + (food.fiber || 0), 0);
 
-            // Build diet plan for this day
+            // Build diet plan for this day (including the fruit suggestion)
             const plan = {
                 day: day,
+                date: date, // NEW: Include the provided date in the plan
                 dietType: dietType,
                 recommended: {
                     protein: proteinReq + ' Grams',
@@ -123,10 +145,7 @@ exports.generateMultiDayDietPlan = async (req, res) => {
                     dinner: dinner,
                     snacks: [snack1, snack2]
                 },
-                // totals: {
-                //   protein: totalProtein,
-                //   fiber: totalFiber
-                // }
+                fruit: fruit // NEW: Added fruit suggestion based on season
             };
             dietPlans.push(plan);
         }

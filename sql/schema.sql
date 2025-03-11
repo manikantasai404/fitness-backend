@@ -57,3 +57,17 @@ CREATE TABLE fitness.foods (
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
+
+
+CREATE TABLE fitness.fruits (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  season VARCHAR(50),
+  vitamin_c_mg DECIMAL,  -- Vitamin C content in mg per serving
+  fiber_g DECIMAL,       -- Fiber content in grams per serving
+  potassium_mg DECIMAL,  -- Potassium content in mg per serving
+  calories DECIMAL,      -- Calories per serving (kcal)
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
